@@ -797,6 +797,14 @@
             opacity: .75;
         }
 
+        .session-card .s-dist {
+            display: block;
+            font-size: 10px;
+            font-weight: 700;
+            margin-top: 2px;
+            opacity: .8;
+        }
+
         .session-card.state-pending {
             opacity: .55;
         }
@@ -1666,6 +1674,29 @@
             color: var(--accent-dark);
         }
 
+        .session-detail-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .session-detail-tag {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 20px;
+            background: rgba(154, 176, 32, 0.15);
+            border: 1px solid var(--accent-border);
+            color: var(--accent-text);
+        }
+
+        .session-detail-tag.tag-note {
+            background: var(--skip-bg);
+            border-color: var(--skip-border);
+            color: var(--skip-text);
+        }
+
         /* Unaccounted session cards — dashed, muted */
         .type-untracked {
             background: var(--surface2);
@@ -2381,6 +2412,22 @@
             ).join('');
         }
 
+        // ── Pace formatting helpers (top-level so accessible everywhere) ─────────────
+        function fmtPace(dec) {
+            const m = Math.floor(dec);
+            const s = Math.round((dec - m) * 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+        function paceRange(zone) {
+            if (!zone) return null;
+            return `${fmtPace(zone[0])}–${fmtPace(zone[1])} /km`;
+        }
+        function estKm(dur, zone) {
+            if (!zone || !dur) return null;
+            const avgPace = (zone[0] + zone[1]) / 2;
+            return Math.round((dur / avgPace) * 10) / 10;
+        }
+
         // ── Plan generation engine ────────────────────────────────────────────────────
         // Evidence basis:
         //  - 80/20 rule: ~80% easy effort, ~20% quality (Seiler, Maffetone, Hal Higdon)
@@ -2524,6 +2571,18 @@
             };
             const injuryNote = INJURY_NOTES[injury] || null;
 
+            // ── Pace zones derived from fitness level (min/km as decimal minutes) ───────
+            // Based on McMillan Running Calculator equivalents and coach consensus ranges.
+            // All paces stored as [min, max] in decimal min/km (e.g. 7.5 = 7:30/km)
+            const PACE_ZONES = {
+                beginner: { easy: [7.5, 9.0], tempo: null, interval: null },
+                intermediate: { easy: [6.0, 7.5], tempo: [5.25, 6.0], interval: null },
+                advanced: { easy: [5.0, 6.0], tempo: [4.25, 5.0], interval: [3.75, 4.5] },
+            };
+            const pz = PACE_ZONES[level] || PACE_ZONES.beginner;
+
+            // Format decimal min/km to "M:SS" string
+
             // ── Week-by-week schedule ─────────────────────────────────────────────────
             const schedule = {};
 
@@ -2561,7 +2620,15 @@
                         const reps = isLong ? Math.round(4 + prog * 4) : Math.round(3 + prog * 3);
                         const dur = Math.round(Math.min((runM + wlkM) * reps * deload, hasInjury ? 35 : 45));
                         const noteStr = injuryNote ? ` · ${injuryNote}` : '';
-                        sessions.push({ day, type: 'run', label: `Run ${runM} min / walk ${wlkM} min ×${reps}${noteStr}`, duration: dur });
+                        const walkrunDistKm = estKm(dur, pz.easy);
+                        sessions.push({
+                            day, type: 'run',
+                            label: `Run ${runM} min / walk ${wlkM} min \xd7${reps}`,
+                            duration: dur,
+                            distKm: walkrunDistKm,
+                            paceZone: pz.easy,
+                            injuryNote: injuryNote || null,
+                        });
 
                     } else {
                         // Continuous running — linear progression from start to peak
@@ -2569,33 +2636,44 @@
                         const easyBase = Math.round(easyStartMin + contProg * (easyPeakMin - easyStartMin));
                         const longBase = Math.round(easyStartMin + contProg * (longPeakMin - easyStartMin));
 
-                        let dur, label;
+                        let dur, label, paceZone, distKm;
                         if (isRaceWk) {
                             dur = Math.round(easyBase * 0.5);
-                            label = `Easy shakeout ${dur} min`;
+                            paceZone = pz.easy;
+                            label = 'Easy shakeout';
                         } else if (isTaperWk && isLong) {
                             dur = Math.round(longBase * taper);
-                            label = `${dur} min easy — taper long run`;
+                            paceZone = pz.easy;
+                            label = 'Long run';
                         } else if (isTaperWk) {
                             dur = Math.round(easyBase * taper);
-                            label = `${dur} min easy — taper`;
+                            paceZone = pz.easy;
+                            label = 'Easy run';
                         } else if (isInterv) {
                             const repDur = level === 'advanced' ? 3 : 2;
                             const reps = level === 'advanced' ? 8 : 6;
                             dur = 10 + repDur * reps + 10;
-                            label = `Intervals: ${reps}×${repDur} min fast`;
+                            paceZone = pz.interval;
+                            label = `Intervals ${reps}\xd7${repDur} min`;
                         } else if (isTempo) {
                             dur = Math.round(easyBase * 0.9 * deload);
-                            label = isDeload ? `${dur} min easy — deload` : `${dur} min tempo`;
+                            if (isDeload) { paceZone = pz.easy; label = 'Easy run'; }
+                            else { paceZone = pz.tempo; label = 'Tempo run'; }
                         } else if (isLong) {
                             dur = Math.round(longBase * deload);
-                            label = isDeload ? `${dur} min easy — deload` : `${dur} min — long run`;
+                            paceZone = pz.easy;
+                            label = isDeload ? 'Easy run' : 'Long run';
                         } else {
                             dur = Math.round(easyBase * deload);
-                            label = isDeload ? `${dur} min easy — deload` : `${dur} min easy`;
+                            paceZone = pz.easy;
+                            label = 'Easy run';
                         }
-                        if (injuryNote && !isRaceWk) label += ` · ${injuryNote}`;
-                        if (dur >= 8) sessions.push({ day, type: 'run', label, duration: dur });
+                        distKm = estKm(dur, paceZone);
+                        const sessionTag = isDeload ? 'deload' : isTaperWk ? 'taper' : isRaceWk ? 'race week' : null;
+                        if (dur >= 8) sessions.push({
+                            day, type: 'run', label, duration: dur,
+                            distKm, paceZone, injuryNote: injuryNote || null, tag: sessionTag,
+                        });
                     }
 
                     // Recovery suggestion added separately below — not on the active session card
@@ -2824,6 +2902,28 @@
             el.addEventListener('click', function (e) { if (e.target === this) this.classList.remove('open'); });
         });
 
+        // ── Session detail block builder ──────────────────────────────────────────────
+        function buildDetailHtml(act) {
+            const typeLabel = act.type === 'fixed' ? 'Your session'
+                : act.type === 'recovery' ? 'Recovery'
+                    : act.type === 'untracked' ? 'Your session'
+                        : act.type.charAt(0).toUpperCase() + act.type.slice(1);
+            const tags = [];
+            if (act.distKm) tags.push({ text: `${act.distKm} km`, cls: '' });
+            if (act.duration) tags.push({ text: `${act.duration} min`, cls: '' });
+            if (act.paceZone) tags.push({ text: `${paceRange(act.paceZone)} /km`, cls: '' });
+            if (act.tag) tags.push({ text: act.tag, cls: '' });
+            if (act.injuryNote) tags.push({ text: act.injuryNote, cls: 'tag-note' });
+            const tagsHtml = tags.length
+                ? `<div class="session-detail-tags">${tags.map(t => `<span class="session-detail-tag ${t.cls}">${t.text}</span>`).join('')}</div>`
+                : '';
+            return `
+    <div class="session-detail-type">${typeLabel}</div>
+    <div class="session-detail-label">${act.label}</div>
+    ${tagsHtml}
+  `;
+        }
+
         function openSessionModal(key, act, st) {
             pendingKey = key; pendingAct = act; selReason = null;
             const isSkipped = st === 'skipped', isDone = st === 'done';
@@ -2838,16 +2938,7 @@
             document.querySelectorAll('.reason-chip').forEach(c => c.classList.remove('selected'));
             // Populate session detail block
             const detail = document.getElementById('sm-detail');
-            if (detail && act) {
-                const typeLabel = act.type === 'fixed' ? 'Your session' : act.type === 'recovery' ? 'Recovery' : act.type.charAt(0).toUpperCase() + act.type.slice(1);
-                const meta = act.duration ? `~${act.duration} min planned` : '';
-                detail.innerHTML = `
-      <div class="session-detail-type">${typeLabel}</div>
-      <div class="session-detail-label">${act.label}</div>
-      ${meta ? `<div class="session-detail-meta">${meta}</div>` : ''}
-    `;
-                detail.classList.add('visible');
-            }
+            if (detail && act) { detail.innerHTML = buildDetailHtml(act); detail.classList.add('visible'); }
             openModal('session-modal');
         }
         function selectReason(el, r) {
@@ -2914,16 +3005,7 @@
             document.getElementById('al-km-wrap').style.display = act.type === 'run' ? '' : 'none';
             // Populate session detail block
             const detail = document.getElementById('al-detail');
-            if (detail) {
-                const typeLabel = act.type === 'fixed' ? 'Your session' : act.type === 'recovery' ? 'Recovery' : act.type.charAt(0).toUpperCase() + act.type.slice(1);
-                const meta = act.duration ? `~${act.duration} min planned` : '';
-                detail.innerHTML = `
-      <div class="session-detail-type">${typeLabel}</div>
-      <div class="session-detail-label">${act.label}</div>
-      ${meta ? `<div class="session-detail-meta">${meta}</div>` : ''}
-    `;
-                detail.classList.add('visible');
-            }
+            if (detail) { detail.innerHTML = buildDetailHtml(act); detail.classList.add('visible'); }
             openModal('autolog-modal');
         }
         function confirmAutoLog() {
@@ -3180,7 +3262,7 @@
                 if (items.length === 0) { const r = document.createElement('div'); r.className = 'rest-label'; r.textContent = 'rest'; col.appendChild(r); }
                 else items.forEach(({ act, key, isRescheduled, isUntracked }) => {
                     const st = sessionState[key] || 'pending', reason = skipReasons[key] || '';
-                    const durHtml = (act.type === 'run' && act.duration) ? `<span class="s-duration">~${act.duration} min</span>` : '';
+                    const durHtml = '';
                     const reasonHtml = (st === 'skipped' && reason) ? `<span class="s-reason">${reason}</span>` : '';
                     const card = document.createElement('div');
                     card.className = `session-card ${typeClass(act.type, act.intensity)} state-${st}${isRescheduled ? ' rescheduled' : ''}`;
@@ -3188,7 +3270,9 @@
                         : act.type === 'untracked' ? 'your session'
                             : act.type === 'recovery' ? 'recovery'
                                 : act.type;
-                    card.innerHTML = `<span class="s-type">${typeTag}</span><span class="s-label">${act.label}</span>${durHtml}${reasonHtml}`;
+                    // Week view: minimal — type tag, session name, distance only
+                    const distBadge = act.distKm ? `<span class="s-dist">${act.distKm} km</span>` : '';
+                    card.innerHTML = `<span class="s-type">${typeTag}</span><span class="s-label">${act.label}</span>${distBadge}${reasonHtml}`;
                     card.onclick = () => tapSession(key, act);
                     col.appendChild(card);
                 });
