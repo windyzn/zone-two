@@ -1927,9 +1927,9 @@
         function loadState() {
             try {
                 const raw = localStorage.getItem(STORAGE_KEY);
-                if (!raw) return false;
+                if (!raw) { console.log('[tracker] nothing in storage'); return false; }
                 const d = JSON.parse(raw);
-                if (!d.config || !d.schedule) return false;
+                if (!d.config || !d.schedule) { console.warn('[tracker] storage missing config/schedule'); return false; }
                 SCHEDULE = d.schedule;
                 CONFIG = d.config;
                 CONFIG.startDate = new Date(d.config.startDate);
@@ -1938,17 +1938,25 @@
                 rescheduled = d.rescheduled || {};
                 log = d.log || [];
                 week = d.week || 1;
+                console.log('[tracker] loaded: week', week, 'of', CONFIG.totalWeeks);
                 return true;
-            } catch (e) { return false; }
+            } catch (e) { console.error('[tracker] loadState error:', e); return false; }
         }
 
         function saveState() {
             try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                    schedule: SCHEDULE, config: { ...CONFIG, startDate: CONFIG.startDate?.toISOString() },
+                const startDate = CONFIG.startDate instanceof Date
+                    ? CONFIG.startDate.toISOString()
+                    : CONFIG.startDate;
+                const payload = JSON.stringify({
+                    schedule: SCHEDULE,
+                    config: { ...CONFIG, startDate },
                     sessionState, skipReasons, rescheduled, log, week
-                }));
-            } catch (e) { }
+                });
+                localStorage.setItem(STORAGE_KEY, payload);
+            } catch (e) {
+                console.error('[tracker] saveState error:', e);
+            }
         }
 
         // ── Onboarding ────────────────────────────────────────────────────────────────
@@ -2238,6 +2246,11 @@
             rescheduled = {};
             log = [];
             saveState();
+            // Verify save actually worked before hiding the questionnaire
+            const verify = localStorage.getItem(STORAGE_KEY);
+            if (!verify) {
+                alert('Could not save your plan — your browser may have storage disabled. The tracker will still work this session, but your plan won\'t persist across page reloads.');
+            }
             launchTracker();
         }
 
@@ -2566,8 +2579,8 @@
         function changeWeek(dir) { week = Math.max(1, Math.min(CONFIG.totalWeeks, week + dir)); saveState(); render(); }
 
         // ── Boot ──────────────────────────────────────────────────────────────────────
-        if (loadState()) { launchTracker(); }
-        else { initOnboarding(); }
+        if (loadState()) { console.log('[tracker] resuming existing plan'); launchTracker(); }
+        else { console.log('[tracker] no plan found, showing onboarding'); initOnboarding(); }
     </script>
 </body>
 
