@@ -597,8 +597,9 @@ body { background:var(--bg); background-image: radial-gradient(circle at 15% 20%
       <div class="field full"><label>Notes</label><textarea id="al-note" rows="3" placeholder="How did it feel?"></textarea></div>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-ghost"   onclick="closeModal('autolog-modal')">Skip logging</button>
-      <button class="btn btn-confirm" onclick="confirmAutoLog()">Save to history ✓</button>
+      <button class="btn btn-ghost"   onclick="closeModal('autolog-modal')">Cancel</button>
+      <button class="btn btn-ghost"   onclick="skipLogging()">Mark done, skip log</button>
+      <button class="btn btn-confirm" onclick="confirmAutoLog()">Save workout ✓</button>
     </div>
   </div>
 </div>
@@ -1525,8 +1526,16 @@ function openAutoLogModal(key, act, w) {
 }
 function confirmAutoLog() {
   const dur=document.getElementById('al-dur').value, km=document.getElementById('al-km').value, note=document.getElementById('al-note').value.trim();
-  if (dur||km||note) { log.push({ week:autologWeek, type:autologAct.type, dur:dur||null, km:km||null, note:note||null, ts:Date.now() }); saveState(); }
-  closeModal('autolog-modal'); render();
+  // Mark done and log
+  sessionState[autologKey] = 'done';
+  if (dur||km||note) { log.push({ week:autologWeek, type:autologAct.type, dur:dur||null, km:km||null, note:note||null, ts:Date.now() }); }
+  saveState(); closeModal('autolog-modal'); render();
+}
+
+function skipLogging() {
+  // User wants to mark done but not log details
+  sessionState[autologKey] = 'done';
+  saveState(); closeModal('autolog-modal'); render();
 }
 
 // ── Edit log ──────────────────────────────────────────────────────────────────
@@ -1551,8 +1560,8 @@ function deleteLogFromEdit() { if (editIdx===null) return; log.splice(editIdx,1)
 // ── Tap ───────────────────────────────────────────────────────────────────────
 function tapSession(key, act) {
   const st = sessionState[key];
-  if (!st) { sessionState[key]='done'; saveState(); openAutoLogModal(key,act,week); render(); }
-  else openSessionModal(key,act,st);
+  if (!st) { openAutoLogModal(key, act, week); }
+  else openSessionModal(key, act, st);
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
