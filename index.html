@@ -8,7 +8,13 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zone 2</title>
+    <title>Zone Two</title>
+    <meta name="description"
+        content="Your personalised running coach. Build a training plan around your goal, schedule, and fitness level.">
+    <meta property="og:title" content="Zone Two">
+    <meta property="og:description"
+        content="Your personalised running coach. Build a training plan around your goal, schedule, and fitness level.">
+    <meta property="og:type" content="website">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link
         href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&family=Lora:ital,wght@0,500;1,400&display=swap"
@@ -2002,7 +2008,7 @@
         <div class="app">
             <div class="header">
                 <div class="header-left">
-                    <h1 id="tracker-title">Zone 2</h1>
+                    <h1 id="tracker-title">Zone Two</h1>
                     <p id="tracker-subtitle">Loading your plan…</p>
                 </div>
                 <div class="header-right">
@@ -2737,7 +2743,7 @@
         function launchTracker() {
             document.getElementById('onboarding').style.display = 'none';
             document.getElementById('tracker').style.display = 'block';
-            document.getElementById('tracker-title').textContent = 'Zone 2';
+            document.getElementById('tracker-title').textContent = CONFIG.goalLabel ? `${CONFIG.goalLabel} Training` : 'Zone Two';
             document.getElementById('tracker-subtitle').textContent = `${CONFIG.totalWeeks}-week plan · started ${CONFIG.startDate ? new Date(CONFIG.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}`;
             document.getElementById('s-pct-sub').textContent = `of ${CONFIG.totalWeeks} weeks`;
             render();
