@@ -1635,6 +1635,22 @@
         .type-untracked .s-type {
             opacity: .55;
         }
+
+        /* Recovery cards — soft green, dashed, lighter weight */
+        .type-recovery {
+            background: #f0f8f0;
+            border-color: #a8d4b0;
+            border-style: dashed;
+            color: #2d6640;
+            opacity: .85;
+        }
+
+        .type-recovery .s-type {
+            font-size: 9px;
+            opacity: .6;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+        }
     </style>
 </head>
 
@@ -2541,8 +2557,7 @@
                         if (dur >= 8) sessions.push({ day, type: 'run', label, duration: dur });
                     }
 
-                    // Yoga: evening add-on on run days (not deload or race week)
-                    if (!isDeload && !isRaceWk) sessions.push({ day, type: 'yoga', label: 'Yoga — evening stretch' });
+                    // Recovery suggestion added separately below — not on the active session card
                 });
 
                 // Fixed commitments
@@ -2569,14 +2584,61 @@
                     }
                 }
 
-                // Deload yoga
-                if (isDeload) {
-                    const yogaDay = freeDays.find(d => !safeRunDays.includes(d) && !commitDays.has(d));
-                    if (yogaDay != null) sessions.push({ day: yogaDay, type: 'yoga', label: 'Yoga — gentle recovery' });
-                }
 
-                sessions.sort((a, b) => a.day - b.day || (a.type === 'yoga' ? 1 : -1));
-                schedule[String(w)] = sessions;
+
+                sessions.sort((a, b) => a.day - b.day);
+
+                // ── Recovery schedule ─────────────────────────────────────────────────
+                // Recovery is separate from active sessions — it doesn't count toward the
+                // active day budget and should feel restorative, not taxing.
+                //
+                // Strategy:
+                //   • After every run day: suggest post-run stretching (5-10 min)
+                //   • After hard sessions or back-to-back days: foam rolling suggestion
+                //   • On rest days that aren't deload: gentle yoga or mobility work
+                //   • Injury runners: recovery is mandatory, not optional
+                const recoveryItems = [];
+                const activeDays = new Set(sessions.map(s => s.day));
+                const allWeekDays = [0, 1, 2, 3, 4, 5, 6];
+
+                // Post-run recovery note (evening of run days)
+                safeRunDays.forEach(day => {
+                    if (!isRaceWk) {
+                        const isHardRun = sessions.some(s => s.day === day && s.type === 'run' &&
+                            (s.label.includes('tempo') || s.label.includes('Intervals') || s.label.includes('long run')));
+                        const label = isHardRun
+                            ? 'Post-run: 10 min stretch + foam roll'
+                            : 'Post-run: 5–10 min stretch';
+                        recoveryItems.push({ day, type: 'recovery', label, isRecovery: true });
+                    }
+                });
+
+                // Rest days: suggest active recovery (not on race week, not every deload day)
+                const restDaysList = allWeekDays.filter(d => !activeDays.has(d) && !restDays.has(d));
+                const recoverySuggestions = [
+                    'Yoga — 20 min gentle flow',
+                    'Foam rolling — legs and hips',
+                    'Mobility work — 15 min',
+                    'Stretching — full body 15 min',
+                ];
+                restDaysList.slice(0, hasInjury ? 2 : 1).forEach((day, i) => {
+                    if (!isRaceWk) {
+                        recoveryItems.push({
+                            day,
+                            type: 'recovery',
+                            label: recoverySuggestions[i % recoverySuggestions.length],
+                            isRecovery: true,
+                        });
+                    }
+                });
+
+                // Merge recovery into sessions (recovery always last on each day)
+                const allSessions = [
+                    ...sessions,
+                    ...recoveryItems,
+                ].sort((a, b) => a.day - b.day || (a.isRecovery ? 1 : -1));
+
+                schedule[String(w)] = allSessions;
             }
 
             return {
@@ -2679,6 +2741,7 @@
         function typeClass(t, intensity) {
             if (t === 'fixed') return 'type-fixed';
             if (t === 'untracked') return 'type-untracked';
+            if (t === 'recovery') return 'type-recovery';
             return { run: 'type-run', pilates: 'type-pilates', yoga: 'type-yoga', strength: 'type-strength' }[t] || '';
         }
         function typeBadgeStyle(t, intensity) {
@@ -2698,7 +2761,17 @@
                 const parts = rkey.split('-');
                 if (parseInt(parts[0]) === w && parseInt(parts[1]) === d) extra.push({ act: info.act, key: rkey, isRescheduled: true });
             });
-            return [...base, ...extra];
+            // Unaccounted fixed sessions — always shown every week for tracking,
+            // but the plan never schedules around them (no rest buffer, no day exclusion)
+            const untracked = (CONFIG.untrackedCommitments || [])
+                .filter(c => c.day === d)
+                .map((c, ui) => ({
+                    act: { type: 'untracked', label: c.label, duration: null },
+                    key: `untracked-${w}-${d}-${ui}`,
+                    isRescheduled: false,
+                    isUntracked: true,
+                }));
+            return [...base, ...extra, ...untracked];
         }
 
         // ── Skip modal ────────────────────────────────────────────────────────────────
@@ -2830,7 +2903,8 @@
         function getWeekStats() {
             return Array.from({ length: CONFIG.totalWeeks }, (_, i) => {
                 const w = i + 1; let total = 0, done = 0, skipped = 0, runMin = 0;
-                for (let d = 0; d < 7; d++) getActsForDay(w, d).forEach(({ key }) => {
+                for (let d = 0; d < 7; d++) getActsForDay(w, d).forEach(({ act, key, isUntracked }) => {
+                    if (isUntracked || act.type === 'recovery') return;
                     const st = sessionState[key]; total++;
                     if (st === 'done') done++; if (st === 'skipped') skipped++;
                 });
@@ -2906,7 +2980,7 @@
             const weekActs = [];
             for (let d = 0; d < 7; d++) {
                 getActsForDay(week, d).forEach(item => {
-                    if (item.isUntracked) return; // ignore untracked in coach counts
+                    if (item.isUntracked || item.act.type === 'recovery') return; // ignore untracked/recovery in coach counts
                     weekActs.push({ ...item, st: sessionState[item.key] || 'pending' });
                 });
             }
@@ -3041,7 +3115,10 @@
                     const reasonHtml = (st === 'skipped' && reason) ? `<span class="s-reason">${reason}</span>` : '';
                     const card = document.createElement('div');
                     card.className = `session-card ${typeClass(act.type, act.intensity)} state-${st}${isRescheduled ? ' rescheduled' : ''}`;
-                    const typeTag = act.type === 'fixed' ? 'session' : act.type === 'untracked' ? 'your session' : act.type;
+                    const typeTag = act.type === 'fixed' ? 'session'
+                        : act.type === 'untracked' ? 'your session'
+                            : act.type === 'recovery' ? 'recovery'
+                                : act.type;
                     card.innerHTML = `<span class="s-type">${typeTag}</span><span class="s-label">${act.label}</span>${durHtml}${reasonHtml}`;
                     card.onclick = () => tapSession(key, act);
                     col.appendChild(card);
@@ -3050,7 +3127,7 @@
             });
 
             let weekDone = 0, weekSkipped = 0, weekRunMin = 0;
-            for (let d = 0; d < 7; d++) getActsForDay(week, d).forEach(({ key }) => { const st = sessionState[key]; if (st === 'done') weekDone++; if (st === 'skipped') weekSkipped++; });
+            for (let d = 0; d < 7; d++) getActsForDay(week, d).forEach(({ act, key, isUntracked }) => { if (isUntracked || act.type === 'recovery') return; const st = sessionState[key]; if (st === 'done') weekDone++; if (st === 'skipped') weekSkipped++; });
             log.filter(e => e.week === week && e.type === 'run' && e.dur).forEach(e => weekRunMin += parseFloat(e.dur));
             const pct = Math.round(((week - 1) / CONFIG.totalWeeks) * 100);
             document.getElementById('s-done').textContent = weekDone;
