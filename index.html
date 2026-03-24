@@ -598,7 +598,6 @@ body { background:var(--bg); background-image: radial-gradient(circle at 15% 20%
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost"   onclick="closeModal('autolog-modal')">Cancel</button>
-      <button class="btn btn-ghost"   onclick="skipLogging()">Mark done, skip log</button>
       <button class="btn btn-confirm" onclick="confirmAutoLog()">Save workout ✓</button>
     </div>
   </div>
@@ -1529,12 +1528,6 @@ function confirmAutoLog() {
   // Mark done and log
   sessionState[autologKey] = 'done';
   if (dur||km||note) { log.push({ week:autologWeek, type:autologAct.type, dur:dur||null, km:km||null, note:note||null, ts:Date.now() }); }
-  saveState(); closeModal('autolog-modal'); render();
-}
-
-function skipLogging() {
-  // User wants to mark done but not log details
-  sessionState[autologKey] = 'done';
   saveState(); closeModal('autolog-modal'); render();
 }
 
