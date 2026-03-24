@@ -1614,20 +1614,30 @@
             <p class="ob-sub">This counts running, pilates, and strength — not yoga, which we treat as a light recovery
                 add-on.</p>
             <div class="ob-options">
+                <div class="ob-option" onclick="selectOpt(this,'daysPerWeek',1)">
+                    <div class="ob-opt-icon">1</div>
+                    <div class="ob-opt-text"><span class="ob-opt-label">1 day</span><span class="ob-opt-desc">Just
+                            running — very gentle start</span></div>
+                </div>
+                <div class="ob-option" onclick="selectOpt(this,'daysPerWeek',2)">
+                    <div class="ob-opt-icon">2</div>
+                    <div class="ob-opt-text"><span class="ob-opt-label">2 days</span><span class="ob-opt-desc">E.g. 1
+                            run + pilates, or 2 runs</span></div>
+                </div>
                 <div class="ob-option" onclick="selectOpt(this,'daysPerWeek',3)">
                     <div class="ob-opt-icon">3</div>
-                    <div class="ob-opt-text"><span class="ob-opt-label">3 days</span><span class="ob-opt-desc">A solid
-                            minimum — works well with a busy schedule</span></div>
+                    <div class="ob-opt-text"><span class="ob-opt-label">3 days</span><span class="ob-opt-desc">E.g. 2
+                            runs + pilates — solid minimum</span></div>
                 </div>
                 <div class="ob-option" onclick="selectOpt(this,'daysPerWeek',4)">
                     <div class="ob-opt-icon">4</div>
-                    <div class="ob-opt-text"><span class="ob-opt-label">4 days</span><span class="ob-opt-desc">Good
-                            balance of training and recovery</span></div>
+                    <div class="ob-opt-text"><span class="ob-opt-label">4 days</span><span class="ob-opt-desc">E.g. 3
+                            runs + pilates or strength</span></div>
                 </div>
                 <div class="ob-option" onclick="selectOpt(this,'daysPerWeek',5)">
                     <div class="ob-opt-icon">5</div>
-                    <div class="ob-opt-text"><span class="ob-opt-label">5 days</span><span class="ob-opt-desc">High
-                            commitment — make sure rest days are protected</span></div>
+                    <div class="ob-opt-text"><span class="ob-opt-label">5 days</span><span class="ob-opt-desc">E.g. 3
+                            runs + pilates + strength</span></div>
                 </div>
             </div>
             <div class="ob-nav">
@@ -2237,39 +2247,63 @@
             // ── Day allocation ────────────────────────────────────────────────────────
             const restDays = new Set(p.restDays || []);
             const commitMap = {};
-            // Only include commitments the user wants the plan to account for
             (p.commitments || []).filter(c => c.accountFor !== false).forEach(c => {
                 commitMap[c.day] = { label: c.label || 'Session' };
             });
             const commitDays = new Set(Object.keys(commitMap).map(Number));
 
-            // Protect day before any moderate/hard fixed commitment
-            // All accounted-for sessions get a rest buffer — don't put a hard run the day before
+            // Don't place hard runs the day before a fixed committed session
             const protectedCommitDays = new Set(Object.keys(commitMap).map(Number));
             const noHardBefore = new Set([...protectedCommitDays].map(d => (d + 6) % 7));
 
             const preferred = [0, 1, 3, 4, 2, 5, 6]; // Mon Tue Thu Fri Wed Sat Sun
-            const active = preferred.filter(d => !restDays.has(d) && !commitDays.has(d));
-            const runCands = [...active].sort((a, b) => (noHardBefore.has(a) ? 1 : 0) - (noHardBefore.has(b) ? 1 : 0));
+            const freeDays = preferred.filter(d => !restDays.has(d) && !commitDays.has(d));
+            const runCands = [...freeDays].sort((a, b) => (noHardBefore.has(a) ? 1 : 0) - (noHardBefore.has(b) ? 1 : 0));
+            const totalActive = Math.max(1, Math.min(parseInt(p.daysPerWeek) || 3, freeDays.length));
 
-            // ── Run days: directly from questionnaire answer ─────────────────────────
-            // Injury caps runs at 3 regardless of choice — never do back-to-back with injury
-            const requestedRuns = parseInt(p.daysPerWeek) || 3;
-            const maxRuns = hasInjury ? Math.min(requestedRuns, 3)
-                : (goal === 'half' && level !== 'beginner') ? Math.min(requestedRuns, 4)
-                    : Math.min(requestedRuns, 4);
-            const numRuns = Math.max(1, Math.min(maxRuns, runCands.length));
+            // ── Split active budget into run / pilates / strength ─────────────────────
+            // Yoga is excluded from the budget entirely — it's recovery, added as an add-on.
+            //
+            // Allocation rules (evidence-based):
+            //   • Beginner:     majority runs (aerobic base first), 1 pilates, strength only if 4+ days
+            //   • Intermediate: balanced runs + 1 pilates + 1 strength when budget allows
+            //   • Advanced:     max runs, 1 pilates, 1 strength
+            //   • Injury:       cap runs at 3, always include pilates + strength (injury prevention)
+            //
+            // With injury, runs capped at 3 and no back-to-back
+            const maxRunsByLevel = {
+                beginner: Math.min(totalActive - (totalActive >= 4 ? 2 : totalActive >= 3 ? 1 : 0), 3),
+                intermediate: Math.min(totalActive - (totalActive >= 3 ? 1 : 0) - (totalActive >= 4 ? 1 : 0), 4),
+                advanced: Math.min(totalActive - (totalActive >= 3 ? 1 : 0) - (totalActive >= 4 ? 1 : 0), 5),
+            };
+            const rawRunCount = hasInjury
+                ? Math.min(3, totalActive - (totalActive >= 2 ? 1 : 0))
+                : (maxRunsByLevel[level] ?? Math.min(totalActive, 3));
+            const numRuns = Math.max(1, Math.min(rawRunCount, runCands.length));
             const runDays = runCands.slice(0, numRuns).sort((a, b) => a - b);
-
-            // With injury, ensure no back-to-back run days
             const safeRunDays = hasInjury ? ensureRestBetweenRuns(runDays) : runDays;
 
             const longRunDay = safeRunDays[safeRunDays.length - 1];
             const tempoDay = safeRunDays.length >= 2 ? safeRunDays[Math.floor(safeRunDays.length / 2)] : safeRunDays[0];
 
-            const supportCands = active.filter(d => !safeRunDays.includes(d));
-            const pilatesDay = supportCands[0] ?? null;
-            const strengthDay = supportCands[1] ?? null;
+            // Remaining active budget after runs
+            const remainingBudget = totalActive - safeRunDays.length;
+
+            // Support sessions fill the remaining budget from non-run free days first,
+            // then spill onto run days if needed (stacking is fine for pilates/strength)
+            const nonRunFree = freeDays.filter(d => !safeRunDays.includes(d));
+            const supportPool = [...nonRunFree, ...freeDays.filter(d => safeRunDays.includes(d))];
+
+            // Include pilates if budget allows (always for injury runners)
+            const wantPilates = remainingBudget >= 1 || hasInjury;
+            const pilatesDay = wantPilates ? (supportPool[0] ?? null) : null;
+
+            // Include strength if budget allows 2+ support sessions (or injury)
+            const wantStrength = remainingBudget >= 2 || hasInjury;
+            const strengthDay = wantStrength
+                ? (supportPool.find(d => d !== pilatesDay) ?? null)
+                : null;
+
             const phases = buildPhaseLabels(goal, totalWeeks);
 
             // ── Training parameters: level + injury ──────────────────────────────────
@@ -2425,7 +2459,7 @@
 
                 // Deload yoga
                 if (isDeload) {
-                    const yogaDay = active.find(d => !safeRunDays.includes(d) && !commitDays.has(d));
+                    const yogaDay = freeDays.find(d => !safeRunDays.includes(d) && !commitDays.has(d));
                     if (yogaDay != null) sessions.push({ day: yogaDay, type: 'yoga', label: 'Yoga — gentle recovery' });
                 }
 
