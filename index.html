@@ -1924,38 +1924,57 @@
         let activeChart = 'completion';
         let chartInst = null;
 
-        function loadState() {
-            try {
-                const raw = localStorage.getItem(STORAGE_KEY);
-                if (!raw) { console.log('[tracker] nothing in storage'); return false; }
-                const d = JSON.parse(raw);
-                if (!d.config || !d.schedule) { console.warn('[tracker] storage missing config/schedule'); return false; }
-                SCHEDULE = d.schedule;
-                CONFIG = d.config;
-                CONFIG.startDate = new Date(d.config.startDate);
-                sessionState = d.sessionState || {};
-                skipReasons = d.skipReasons || {};
-                rescheduled = d.rescheduled || {};
-                log = d.log || [];
-                week = d.week || 1;
-                console.log('[tracker] loaded: week', week, 'of', CONFIG.totalWeeks);
-                return true;
-            } catch (e) { console.error('[tracker] loadState error:', e); return false; }
-        }
-
         function saveState() {
             try {
+                // Store profile (tiny) and tracker state separately from the schedule.
+                // Schedule is regenerated from profile on load — avoids large storage payloads.
                 const startDate = CONFIG.startDate instanceof Date
                     ? CONFIG.startDate.toISOString()
                     : CONFIG.startDate;
-                const payload = JSON.stringify({
-                    schedule: SCHEDULE,
-                    config: { ...CONFIG, startDate },
+                localStorage.setItem(STORAGE_KEY + '_profile', JSON.stringify({
+                    profile: window._savedProfile || {},
+                    configMeta: { goalLabel: CONFIG.goalLabel, goal: CONFIG.goal, level: CONFIG.level, totalWeeks: CONFIG.totalWeeks, startDate, phases: CONFIG.phases }
+                }));
+                localStorage.setItem(STORAGE_KEY + '_progress', JSON.stringify({
                     sessionState, skipReasons, rescheduled, log, week
-                });
-                localStorage.setItem(STORAGE_KEY, payload);
+                }));
+                console.log('[tracker] saved');
             } catch (e) {
                 console.error('[tracker] saveState error:', e);
+            }
+        }
+
+        function loadState() {
+            try {
+                const rawProfile = localStorage.getItem(STORAGE_KEY + '_profile');
+                const rawProgress = localStorage.getItem(STORAGE_KEY + '_progress');
+                if (!rawProfile) { console.log('[tracker] nothing in storage'); return false; }
+
+                const { profile: savedProfile, configMeta } = JSON.parse(rawProfile);
+                if (!configMeta || !savedProfile) { console.warn('[tracker] storage corrupt'); return false; }
+
+                // Regenerate schedule from saved profile answers
+                const profileWithDate = { ...savedProfile, startDate: new Date(configMeta.startDate) };
+                const result = generatePlan(profileWithDate);
+                SCHEDULE = result.schedule;
+                CONFIG = result.config;
+                CONFIG.startDate = new Date(configMeta.startDate);
+                window._savedProfile = savedProfile;
+
+                if (rawProgress) {
+                    const p = JSON.parse(rawProgress);
+                    sessionState = p.sessionState || {};
+                    skipReasons = p.skipReasons || {};
+                    rescheduled = p.rescheduled || {};
+                    log = p.log || [];
+                    week = p.week || 1;
+                }
+
+                console.log('[tracker] loaded: week', week, 'of', CONFIG.totalWeeks);
+                return true;
+            } catch (e) {
+                console.error('[tracker] loadState error:', e);
+                return false;
             }
         }
 
@@ -2245,11 +2264,12 @@
             skipReasons = {};
             rescheduled = {};
             log = [];
+            window._savedProfile = { ...profile, startDate: profile.startDate instanceof Date ? profile.startDate.toISOString() : profile.startDate };
             saveState();
-            // Verify save actually worked before hiding the questionnaire
-            const verify = localStorage.getItem(STORAGE_KEY);
+            // Verify save actually worked
+            const verify = localStorage.getItem(STORAGE_KEY + '_profile');
             if (!verify) {
-                alert('Could not save your plan — your browser may have storage disabled. The tracker will still work this session, but your plan won\'t persist across page reloads.');
+                alert('Your browser is blocking storage on this site (common in Safari private mode or with strict tracking prevention). The tracker will work this session but won\'t remember your plan after you close the tab.');
             }
             launchTracker();
         }
@@ -2265,7 +2285,9 @@
         }
 
         function confirmReset() {
-            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(STORAGE_KEY + '_profile');
+            localStorage.removeItem(STORAGE_KEY + '_progress');
+            localStorage.removeItem(STORAGE_KEY); // clear old key too just in case
             closeModal('reset-modal');
             document.getElementById('tracker').style.display = 'none';
             document.getElementById('onboarding').style.display = 'block';
