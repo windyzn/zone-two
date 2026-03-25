@@ -701,11 +701,18 @@
             margin-bottom: 14px;
         }
 
+        .cal-grid-wrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-bottom: 24px;
+        }
+
         .cal-grid {
             display: grid;
-            grid-template-columns: repeat(7, minmax(0, 1fr));
+            grid-template-columns: repeat(7, minmax(110px, 1fr));
             gap: 8px;
-            margin-bottom: 24px;
+            margin-bottom: 0;
+            min-width: 770px;
         }
 
         .day-col {
@@ -1518,6 +1525,7 @@
 
             .cal-grid {
                 gap: 5px;
+                min-width: 700px;
             }
 
             .day-col {
@@ -2124,7 +2132,9 @@
             </div>
             <p class="tap-hint">Tap to log a session · tap again to skip, reschedule, or undo</p>
 
-            <div class="cal-grid" id="cal-grid"></div>
+            <div class="cal-grid-wrap">
+                <div class="cal-grid" id="cal-grid"></div>
+            </div>
 
             <div class="section-title">Log a session manually</div>
             <div class="log-form">
@@ -2929,7 +2939,7 @@
             const tags = [];
             if (act.distKm) tags.push({ text: `${act.distKm} km`, cls: '' });
             if (act.duration) tags.push({ text: `${act.duration} min`, cls: '' });
-            if (act.paceZone) tags.push({ text: `${paceRange(act.paceZone)} /km`, cls: '' });
+            if (act.paceZone) tags.push({ text: paceRange(act.paceZone), cls: '' });
             if (act.tag) tags.push({ text: act.tag, cls: '' });
             if (act.injuryNote) tags.push({ text: act.injuryNote, cls: 'tag-note' });
             const tagsHtml = tags.length
